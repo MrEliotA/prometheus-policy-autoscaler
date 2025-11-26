@@ -1,9 +1,8 @@
 Prometheus Policy Autoscaler
 
-Prometheus-driven Kubernetes autoscaler for Laravel-based workloads (web and queues).
-Implements policy-as-code, PromQL-based scaling, and integrates with GitOps workflows using Jenkins, Helm, and Argo CD.
+Prometheus-driven Kubernetes autoscaler for Laravel-based workloads (web and queues), featuring policy-as-code, PromQL integration, and a complete GitOps-friendly CI/CD pipeline (Jenkins, Helm, Argo CD).
 
-A custom controller that understands application-level and infrastructure-level signals—Laravel HTTP traffic, queue pressure, MySQL threads, Redis usage—and scales accordingly.
+This controller scales applications based on real signals such as HTTP traffic, queue backlog, MySQL load, and Redis pressure, instead of relying solely on CPU and memory usage.
 
 Table of Contents
 
@@ -33,113 +32,131 @@ Next Steps
 
 Motivation
 
-Kubernetes HPAs usually rely on CPU/memory or a single metric. Real Laravel systems require more context:
+Kubernetes Horizontal Pod Autoscalers typically respond to CPU, memory, or a single custom metric.
+However, real Laravel production systems require broader context:
 
 HTTP request throughput
 
-Request latency
+Latency (p95, average)
 
 Queue backlog and job age
 
 MySQL thread/connection pressure
 
-Redis memory usage
+Redis memory saturation
 
-This controller:
+This project provides:
 
-Defines a CRD (PrometheusAutoscaler) where scaling logic is expressed via PromQL
+A Kubernetes controller written in Go
 
-Targets Laravel workloads as an example but supports any Deployment
+A CRD (PrometheusAutoscaler) describing autoscaling policies as code
 
-Uses Prometheus as the metrics source
+Prometheus as the single metrics source
 
-Is deployed via Helm and managed through Argo CD
+GitOps deployment via Helm and Argo CD
 
-Is built through Jenkins CI
+A Jenkins-driven CI pipeline for builds and releases
 
 Key Features
-Custom Resource Definition
+Custom Resource Definition: PrometheusAutoscaler
 
-PrometheusAutoscaler (autoscaler.laravel.app/v1alpha1)
+API group: autoscaler.laravel.app/v1alpha1.
 
 Policy-as-code
 
-Multiple metrics per autoscaler
+Multiple metrics per policy
 
-Separate scaleUp and scaleDown rules per metric
+Separate scaleUp and scaleDown rules
 
 Aggregation strategies: max, min, average, weighted
 
-Stabilization, cooldown, and rate limit features
+Stabilization windows and cooldown mechanisms
 
-Laravel-focused autoscaling signals
+Rate limiting for scaling adjustments
 
-HTTP RPS, latency, error rate
+Laravel-aware autoscaling signals
 
-Queue backlog and oldest job age
+HTTP RPS
 
-MySQL exporter metrics
+Average and percentile latency
 
-Redis exporter metrics
+Error rate
+
+Queue backlog, waiting job age
+
+MySQL threads, connections
+
+Redis memory usage
 
 Dry-run mode
 
-Test decisions without making changes.
+Simulates scaling decisions without applying changes.
 
-Implementation features
+Implementation details
 
-Based on controller-runtime
+Built on controller-runtime
 
-Readiness/liveness probes
+Structured logging
 
-Kubernetes Events for decision logs
+Health/readiness probes
 
-GitOps friendly
+Kubernetes Events for visibility
 
-Helm deployment
+GitOps-friendly
 
-Argo CD synchronization
+Controller packaged as a Helm chart
 
-Jenkins image build + values update
+Argo CD synchronizes configuration from Git
+
+Jenkins updates image tags automatically
 
 High-Level Architecture
-Control Loop
+Control Loop Overview
 
-Watches PrometheusAutoscaler CRs
+Watches for PrometheusAutoscaler resources.
 
-Fetches corresponding Deployments
+Retrieves referenced Deployments.
 
-Executes PromQL queries
+Executes PromQL queries against Prometheus.
 
-Feeds values into the policy engine
+Evaluates results using policy engine.
 
-Produces desiredReplicas
+Computes desiredReplicas.
 
-Applies changes (unless DryRun)
+Applies changes (unless in DryRun mode).
 
-Updates CR .status
+Updates .status with:
+
+currentReplicas
+
+desiredReplicas
+
+lastScaleTime
+
+metrics snapshot
 
 CI/CD Flow
 
-Developer pushes to GitHub
+Developer pushes to Git.
 
 Jenkins:
 
-Runs tests
+Runs unit tests
 
 Builds Docker image
 
-Tags image with commit SHA
+Tags with commit SHA
 
-Pushes the image
+Pushes to registry
 
-Updates Helm values.yaml
+Updates Helm values.yaml with new image tag
 
-Jenkins pushes changes to Git
-
-Argo CD detects changes and syncs to cluster
+Argo CD detects changes and deploys updates automatically.
 
 Custom Resource: PrometheusAutoscaler
+
+Example:
+
 apiVersion: autoscaler.laravel.app/v1alpha1
 kind: PrometheusAutoscaler
 metadata:
@@ -194,7 +211,7 @@ spec:
 Laravel Metrics and PromQL Signals
 Web Autoscaling
 
-HTTP RPS:
+HTTP Requests Per Second:
 
 sum(rate(http_requests_total{app="laravel-web",route!~"/healthz"}[2m]))
 
@@ -214,7 +231,7 @@ sum(rate(http_requests_total{app="laravel-web"}[5m]))
 
 Queue Autoscaling
 
-Queue Backlog:
+Backlog:
 
 sum(laravel_queue_jobs_pending{queue="emails"})
 
@@ -223,40 +240,37 @@ Oldest Job Age:
 
 max(laravel_queue_oldest_job_age_seconds{queue="emails"})
 
-MySQL Signals
+MySQL Example
 mysql_global_status_threads_running
 
-Redis Signals
+Redis Example
 redis_memory_used_bytes / redis_memory_max_bytes
 
 CI/CD: Jenkins, Helm, and Argo CD
 Jenkins Pipeline
 
-Runs Go tests
+Runs Go unit tests
 
-Builds and pushes Docker image
+Builds and pushes controller image
 
-Modifies Helm values (image.tag)
+Updates Helm chart values with new image tag
 
-Pushes back to Git
-
-Does not apply to cluster directly
+Commits changes to Git
 
 Argo CD Applications
 
-prometheus-autoscaler-app.yaml (controller)
+prometheus-autoscaler-app.yaml: Deploys controller
 
-laravel-demo-app.yaml (demo stack)
+laravel-demo-app.yaml: Deploys demo Laravel stack
 
-Argo CD syncs the cluster with Git state.
+Argo CD continuously syncs cluster state with Git.
 
 Repository Layout
 prometheus-policy-autoscaler/
 ├── go.mod
 ├── Dockerfile
 ├── Jenkinsfile
-├── cmd/
-│   └── controller/main.go
+├── cmd/controller/main.go
 ├── api/v1alpha1/
 │   ├── groupversion_info.go
 │   └── prometheusautoscaler_types.go
@@ -290,9 +304,9 @@ Docker
 
 Kubernetes cluster
 
-Prometheus installation (kube-prometheus-stack recommended)
+Prometheus installation
 
-Optional: Argo CD, Jenkins
+Optional: Argo CD and Jenkins
 
 Build
 git clone https://github.com/MreliotA/prometheus-policy-autoscaler.git
@@ -301,12 +315,12 @@ cd prometheus-policy-autoscaler
 go mod tidy
 go test ./...
 
-Build and push image
+Build Image
 docker build -t your-registry/prometheus-autoscaler-controller:dev .
 docker push your-registry/prometheus-autoscaler-controller:dev
 
 
-Update helm values to use the new tag.
+Update Helm values to reflect image tag.
 
 Deploying the Controller
 helm upgrade --install prometheus-policy-autoscaler \
@@ -315,7 +329,7 @@ helm upgrade --install prometheus-policy-autoscaler \
   --create-namespace
 
 Deploying the Laravel Demo Stack
-Option A: Raw YAML
+Raw Manifests
 kubectl apply -f config/samples/namespace.yaml
 kubectl apply -f config/samples/laravel-web-deployment.yaml
 kubectl apply -f config/samples/laravel-worker-deployment.yaml
@@ -324,7 +338,7 @@ kubectl apply -f config/samples/redis-exporter-deployment.yaml
 kubectl apply -f config/samples/laravel-web-autoscaler.yaml
 kubectl apply -f config/samples/laravel-queue-autoscaler.yaml
 
-Option B: Helm Chart
+Helm Chart
 helm upgrade --install laravel-demo \
   deploy/helm/laravel-demo \
   --namespace laravel-demo \
@@ -334,26 +348,26 @@ helm upgrade --install laravel-demo \
 
 Extending to Other Workloads
 
-Instrument your service with Prometheus metrics
+Expose Prometheus metrics in your application
 
-Create a new PrometheusAutoscaler
+Create a PrometheusAutoscaler referencing your Deployment
 
 Define PromQL expressions
 
-Configure thresholds and behavior
+Tune thresholds and behavior
 
-Inspect decisions:
+Inspect controller decisions:
 
 kubectl describe prometheusautoscaler <name>
 
 Next Steps
 
-More aggregation strategies
+Additional aggregation strategies
 
-Per-metric gating logic
+Per-metric gating and safety conditions
 
-Possible integration with KEDA
+Potential integration with KEDA
 
-Additional test suites
+Expanded test coverage
 
-Demo stacks for other ecosystems
+Examples for non-Laravel workloads
