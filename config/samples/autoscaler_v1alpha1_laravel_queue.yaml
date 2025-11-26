@@ -1,0 +1,58 @@
+apiVersion: autoscaler.laravel.app/v1alpha1
+kind: PrometheusAutoscaler
+metadata:
+  name: laravel-queue-emails-autoscaler
+  namespace: production
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: laravel-queue-emails
+    namespace: production
+
+  minReplicas: 2
+  maxReplicas: 50
+  mode: Apply
+
+  prometheus:
+    url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+
+  aggregation: max
+
+  metrics:
+    - name: queue_backlog
+      promQL: |
+        sum(horizon_current_workload{queue="emails"})
+      scaleUp:
+        threshold: 200      # more than 200 pending jobs
+        step: 5
+      scaleDown:
+        threshold: 20
+        step: 2
+
+    - name: jobs_per_minute
+      promQL: |
+        sum(horizon_jobs_per_minute{queue="emails"})
+      scaleUp:
+        threshold: 150
+        step: 3
+      scaleDown:
+        threshold: 40
+        step: 1
+
+    - name: failed_jobs_rate
+      promQL: |
+        sum(horizon_failed_jobs_per_hour{queue="emails"})
+      scaleUp:
+        threshold: 10       # high failure rate with backlog -> more workers
+        step: 2
+      scaleDown:
+        threshold: 2
+        step: 0
+
+  behavior:
+    stabilizationWindowSeconds: 60
+    scaleUpCooldownSeconds: 30
+    scaleDownCooldownSeconds: 120
+    maxScaleUpStepPercent: 200
+    maxScaleDownStepPercent: 50

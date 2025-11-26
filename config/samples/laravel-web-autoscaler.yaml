@@ -1,0 +1,73 @@
+apiVersion: autoscaler.laravel.app/v1alpha1
+kind: PrometheusAutoscaler
+metadata:
+  name: laravel-web-autoscaler
+  namespace: laravel-demo
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: laravel-web
+    namespace: laravel-demo
+
+  minReplicas: 3
+  maxReplicas: 20
+  mode: Apply
+
+  prometheus:
+    # Adapt this to your Prometheus service DNS
+    url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+
+  aggregation: max
+
+  metrics:
+    # HTTP Requests per second
+    - name: http_rps
+      promQL: |
+        sum(rate(http_requests_total{app="laravel-web"}[2m]))
+      scaleUp:
+        threshold: 250
+        step: 2
+      scaleDown:
+        threshold: 80
+        step: 1
+
+    # Average latency over last 2 minutes
+    - name: http_latency_avg
+      promQL: |
+        rate(http_request_duration_seconds_sum{app="laravel-web"}[2m])
+        /
+        rate(http_request_duration_seconds_count{app="laravel-web"}[2m])
+      scaleUp:
+        threshold: 0.30     # > 300ms => add capacity
+        step: 2
+      scaleDown:
+        threshold: 0.15     # < 150ms => safe to scale down a bit
+        step: 1
+
+    # MySQL connection pressure (safety metric)
+    - name: db_conn_ratio
+      promQL: |
+        mysql_global_status_threads_connected
+        /
+        mysql_global_variables_max_connections
+      scaleDown:
+        threshold: 0.90     # if >90% connections used, prefer not to grow further
+        step: 1
+
+    # Redis memory pressure (safety metric)
+    - name: redis_memory_ratio
+      promQL: |
+        redis_memory_used_bytes
+        /
+        redis_memory_max_bytes
+      scaleDown:
+        threshold: 0.90
+        step: 1
+
+  behavior:
+    stabilizationWindowSeconds: 120
+    scaleUpCooldownSeconds: 60
+    scaleDownCooldownSeconds: 180
+    maxScaleUpStepPercent: 100
+    maxScaleDownStepPercent: 50

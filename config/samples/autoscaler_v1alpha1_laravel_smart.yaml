@@ -1,0 +1,76 @@
+apiVersion: autoscaler.laravel.app/v1alpha1
+kind: PrometheusAutoscaler
+metadata:
+  name: laravel-api-smart-autoscaler
+  namespace: production
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: laravel-api-web
+    namespace: production
+
+  minReplicas: 3
+  maxReplicas: 40
+  mode: Apply
+
+  prometheus:
+    url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+
+  aggregation: max
+
+  metrics:
+    # --- Application signals (web) ---
+    - name: http_rps
+      promQL: |
+        sum(rate(http_requests_total{app="laravel-api",route!~"/healthz"}[2m]))
+      scaleUp:
+        threshold: 300
+        step: 4
+      scaleDown:
+        threshold: 100
+        step: 2
+
+    - name: http_latency_avg
+      promQL: |
+        rate(http_request_duration_seconds_sum{app="laravel-api"}[2m])
+        /
+        rate(http_request_duration_seconds_count{app="laravel-api"}[2m])
+      scaleUp:
+        threshold: 0.30
+        step: 3
+      scaleDown:
+        threshold: 0.15
+        step: 1
+
+    # --- MySQL gate (mysqld_exporter) ---
+    - name: mysql_threads_running
+      promQL: |
+        mysql_global_status_threads_running{instance="mysql-prod:3306"}
+      # Step=0: this metric acts purely as a gate in the policy engine.
+      scaleUp:
+        threshold: 220
+        step: 0
+      scaleDown:
+        threshold: 100
+        step: 0
+
+    # --- Redis gate (redis_exporter) ---
+    - name: redis_memory_ratio
+      promQL: |
+        redis_memory_used_bytes{instance="redis-prod:6379"}
+        /
+        redis_memory_max_bytes{instance="redis-prod:6379"}
+      scaleUp:
+        threshold: 0.90
+        step: 0
+      scaleDown:
+        threshold: 0.70
+        step: 0
+
+  behavior:
+    stabilizationWindowSeconds: 120
+    scaleUpCooldownSeconds: 45
+    scaleDownCooldownSeconds: 240
+    maxScaleUpStepPercent: 100
+    maxScaleDownStepPercent: 40

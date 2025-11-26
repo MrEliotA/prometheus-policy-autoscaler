@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus-autoscaler
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/MreliotA/prometheus-policy-autoscaler.git
+    targetRevision: main
+    path: deploy/helm/prometheus-autoscaler
+    helm:
+      releaseName: prometheus-autoscaler
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

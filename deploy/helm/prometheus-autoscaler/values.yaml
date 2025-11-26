@@ -1,0 +1,27 @@
+image:
+  repository: your-registry/prometheus-autoscaler-controller
+  tag: "dev"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+serviceAccount:
+  create: true
+  name: ""
+
+rbac:
+  create: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 300m
+    memory: 256Mi
+
+metrics:
+  address: ":8080"
+health:
+  address: ":8081"
+logLevel: "info"

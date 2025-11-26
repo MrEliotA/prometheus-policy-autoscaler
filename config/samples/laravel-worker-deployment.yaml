@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: laravel-worker
+  namespace: laravel-demo
+  labels:
+    app: laravel-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: laravel-worker
+  template:
+    metadata:
+      labels:
+        app: laravel-worker
+    spec:
+      containers:
+        - name: worker
+          image: your-registry.example.com/laravel-demo-worker:latest
+          imagePullPolicy: IfNotPresent
+          command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3"]
+          env:
+            - name: APP_ENV
+              value: "production"
+            - name: QUEUE_CONNECTION
+              value: "redis"
+            - name: REDIS_HOST
+              value: "redis.laravel-demo.svc.cluster.local"
+            - name: DB_HOST
+              value: "mysql.laravel-demo.svc.cluster.local"

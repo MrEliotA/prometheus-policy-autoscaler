@@ -1,0 +1,50 @@
+apiVersion: autoscaler.laravel.app/v1alpha1
+kind: PrometheusAutoscaler
+metadata:
+  name: laravel-queue-autoscaler
+  namespace: laravel-demo
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: laravel-worker
+    namespace: laravel-demo
+
+  minReplicas: 1
+  maxReplicas: 30
+  mode: Apply
+
+  prometheus:
+    url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+
+  aggregation: max
+
+  metrics:
+    # Backlog: how many jobs are waiting in the default queue
+    - name: queue_backlog
+      promQL: |
+        sum(laravel_queue_jobs_pending{queue="default"})
+      scaleUp:
+        threshold: 200
+        step: 5
+      scaleDown:
+        threshold: 20
+        step: 2
+
+    # Age of the oldest job in seconds
+    - name: oldest_job_age
+      promQL: |
+        max(laravel_queue_oldest_job_age_seconds{queue="default"})
+      scaleUp:
+        threshold: 60
+        step: 5
+      scaleDown:
+        threshold: 10
+        step: 2
+
+  behavior:
+    stabilizationWindowSeconds: 60
+    scaleUpCooldownSeconds: 30
+    scaleDownCooldownSeconds: 120
+    maxScaleUpStepPercent: 200
+    maxScaleDownStepPercent: 50

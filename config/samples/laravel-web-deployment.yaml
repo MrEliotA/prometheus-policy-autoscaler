@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: laravel-web
+  namespace: laravel-demo
+  labels:
+    app: laravel-web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: laravel-web
+  template:
+    metadata:
+      labels:
+        app: laravel-web
+    spec:
+      containers:
+        - name: web
+          image: your-registry.example.com/laravel-demo-web:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: APP_ENV
+              value: "production"
+            - name: APP_DEBUG
+              value: "false"
+            - name: DB_HOST
+              value: "mysql.laravel-demo.svc.cluster.local"
+            - name: REDIS_HOST
+              value: "redis.laravel-demo.svc.cluster.local"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 20
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: laravel-web
+  namespace: laravel-demo
+  labels:
+    app: laravel-web
+spec:
+  selector:
+    app: laravel-web
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
