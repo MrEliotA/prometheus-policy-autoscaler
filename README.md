@@ -1,10 +1,10 @@
 Prometheus Policy Autoscaler
 
-Prometheus-driven Kubernetes autoscaler for Laravel-based workloads (web and queues), featuring policy-as-code, PromQL integration, and a complete GitOps-friendly CI/CD pipeline (Jenkins, Helm, Argo CD).
+A Prometheus-driven, policy-as-code Kubernetes autoscaler designed for Laravel-based workloads (web and queues), providing scaling based on real application metrics such as HTTP throughput, latency, queue backlog, MySQL pressure, and Redis memory saturation.
 
-This controller scales applications based on real signals such as HTTP traffic, queue backlog, MySQL load, and Redis pressure, instead of relying solely on CPU and memory usage.
+This project implements a custom Kubernetes controller that evaluates PromQL-based signals, applies configurable scaling policies, and manages replica adjustments for any Deployment. It integrates fully with GitOps flows using Helm and Argo CD and provides an example CI/CD pipeline via Jenkins.
 
-Table of Contents
+Navigation
 
 Motivation
 
@@ -32,131 +32,99 @@ Next Steps
 
 Motivation
 
-Kubernetes Horizontal Pod Autoscalers typically respond to CPU, memory, or a single custom metric.
-However, real Laravel production systems require broader context:
+Traditional Kubernetes HPAs use CPU, memory, or a single custom metric. Real-world Laravel applications need more context:
 
-HTTP request throughput
-
-Latency (p95, average)
+HTTP request rate and latency
 
 Queue backlog and job age
 
-MySQL thread/connection pressure
+Database and cache pressure
 
-Redis memory saturation
+Error rates and saturation signals
 
-This project provides:
+This project introduces:
 
 A Kubernetes controller written in Go
 
-A CRD (PrometheusAutoscaler) describing autoscaling policies as code
+A CRD (PrometheusAutoscaler) expressing autoscaling logic as PromQL policies
 
-Prometheus as the single metrics source
+Generic enough to support any Deployment (not only Laravel)
 
-GitOps deployment via Helm and Argo CD
+GitOps-friendly deployment via Helm and Argo CD
 
-A Jenkins-driven CI pipeline for builds and releases
+CI/CD pipeline powered by Jenkins
 
 Key Features
-Custom Resource Definition: PrometheusAutoscaler
-
-API group: autoscaler.laravel.app/v1alpha1.
-
+PrometheusAutoscaler CRD (autoscaler.laravel.app/v1alpha1)
 Policy-as-code
 
-Multiple metrics per policy
+Multiple metrics per autoscaler
 
-Separate scaleUp and scaleDown rules
+Separate scale-up and scale-down thresholds
+
+Scaling steps and rate controls
+
+Stabilization windows
 
 Aggregation strategies: max, min, average, weighted
 
-Stabilization windows and cooldown mechanisms
+Laravel-specific metrics
 
-Rate limiting for scaling adjustments
+HTTP throughput
 
-Laravel-aware autoscaling signals
+Request latency and error rate
 
-HTTP RPS
+Queue backlog & oldest job age
 
-Average and percentile latency
-
-Error rate
-
-Queue backlog, waiting job age
-
-MySQL threads, connections
+MySQL connection/thread load
 
 Redis memory usage
 
-Dry-run mode
+DryRun Mode
 
-Simulates scaling decisions without applying changes.
+Simulates decisions without updating the Deployment.
 
-Implementation details
+Controller implementation
 
-Built on controller-runtime
-
-Structured logging
+Based on controller-runtime
 
 Health/readiness probes
 
+Structured logging
+
 Kubernetes Events for visibility
 
-GitOps-friendly
+GitOps Support
 
-Controller packaged as a Helm chart
+Helm chart for the controller
 
-Argo CD synchronizes configuration from Git
+Argo CD watches Git and syncs automatically
 
-Jenkins updates image tags automatically
+Jenkins updates image tags in the chart
 
 High-Level Architecture
-Control Loop Overview
+Control Flow
+PrometheusAutoscaler CR → PromQL evaluation → Policy Engine → desiredReplicas → Deployment patch → Status update
 
-Watches for PrometheusAutoscaler resources.
 
-Retrieves referenced Deployments.
+Watch PrometheusAutoscaler resources
 
-Executes PromQL queries against Prometheus.
+Fetch referenced Deployment
 
-Evaluates results using policy engine.
+Query Prometheus using PromQL expressions
 
-Computes desiredReplicas.
+Evaluate metrics inside policy engine
 
-Applies changes (unless in DryRun mode).
+Compute the desired number of replicas
 
-Updates .status with:
+Patch Deployment (unless DryRun)
 
-currentReplicas
+Update CR status with metrics snapshot
 
-desiredReplicas
-
-lastScaleTime
-
-metrics snapshot
-
-CI/CD Flow
-
-Developer pushes to Git.
-
-Jenkins:
-
-Runs unit tests
-
-Builds Docker image
-
-Tags with commit SHA
-
-Pushes to registry
-
-Updates Helm values.yaml with new image tag
-
-Argo CD detects changes and deploys updates automatically.
+CI/CD Pipeline
+GitHub → Jenkins → Docker Registry → Git (updated Helm values) → Argo CD → Kubernetes
 
 Custom Resource: PrometheusAutoscaler
-
-Example:
-
 apiVersion: autoscaler.laravel.app/v1alpha1
 kind: PrometheusAutoscaler
 metadata:
@@ -211,19 +179,19 @@ spec:
 Laravel Metrics and PromQL Signals
 Web Autoscaling
 
-HTTP Requests Per Second:
+HTTP Requests Per Second
 
 sum(rate(http_requests_total{app="laravel-web",route!~"/healthz"}[2m]))
 
 
-Average Latency:
+Average Request Latency
 
 rate(http_request_duration_seconds_sum{app="laravel-web"}[2m])
 /
 rate(http_request_duration_seconds_count{app="laravel-web"}[2m])
 
 
-Error Rate:
+Error Rate
 
 sum(rate(http_requests_total{app="laravel-web",status=~"5.."}[5m]))
 /
@@ -231,46 +199,58 @@ sum(rate(http_requests_total{app="laravel-web"}[5m]))
 
 Queue Autoscaling
 
-Backlog:
+Queue backlog
 
 sum(laravel_queue_jobs_pending{queue="emails"})
 
 
-Oldest Job Age:
+Oldest job age
 
 max(laravel_queue_oldest_job_age_seconds{queue="emails"})
 
-MySQL Example
+MySQL & Redis Exporters
+
+MySQL threads running
+
 mysql_global_status_threads_running
 
-Redis Example
+
+Redis memory ratio
+
 redis_memory_used_bytes / redis_memory_max_bytes
 
 CI/CD: Jenkins, Helm, and Argo CD
 Jenkins Pipeline
 
-Runs Go unit tests
+go test ./...
 
-Builds and pushes controller image
+Build Docker image
 
-Updates Helm chart values with new image tag
+Tag with commit SHA
 
-Commits changes to Git
+Push to registry
 
-Argo CD Applications
+Modify Helm values.yaml with new tag
 
-prometheus-autoscaler-app.yaml: Deploys controller
+Commit and push updates
 
-laravel-demo-app.yaml: Deploys demo Laravel stack
+Argo CD
 
-Argo CD continuously syncs cluster state with Git.
+Two application definitions:
+
+prometheus-autoscaler-app.yaml — deploys controller Helm chart
+
+laravel-demo-app.yaml — deploys Laravel demo stack
+
+Argo CD monitors Git, detects changes, and syncs automatically.
 
 Repository Layout
 prometheus-policy-autoscaler/
 ├── go.mod
 ├── Dockerfile
 ├── Jenkinsfile
-├── cmd/controller/main.go
+├── cmd/
+│   └── controller/main.go
 ├── api/v1alpha1/
 │   ├── groupversion_info.go
 │   └── prometheusautoscaler_types.go
@@ -304,7 +284,7 @@ Docker
 
 Kubernetes cluster
 
-Prometheus installation
+Prometheus installed (kube-prometheus-stack recommended)
 
 Optional: Argo CD and Jenkins
 
@@ -320,7 +300,7 @@ docker build -t your-registry/prometheus-autoscaler-controller:dev .
 docker push your-registry/prometheus-autoscaler-controller:dev
 
 
-Update Helm values to reflect image tag.
+Update Helm chart to use your image tag.
 
 Deploying the Controller
 helm upgrade --install prometheus-policy-autoscaler \
@@ -329,7 +309,7 @@ helm upgrade --install prometheus-policy-autoscaler \
   --create-namespace
 
 Deploying the Laravel Demo Stack
-Raw Manifests
+Raw YAML
 kubectl apply -f config/samples/namespace.yaml
 kubectl apply -f config/samples/laravel-web-deployment.yaml
 kubectl apply -f config/samples/laravel-worker-deployment.yaml
@@ -348,15 +328,17 @@ helm upgrade --install laravel-demo \
 
 Extending to Other Workloads
 
-Expose Prometheus metrics in your application
+To autoscale another Deployment:
 
-Create a PrometheusAutoscaler referencing your Deployment
+Expose Prometheus metrics
 
-Define PromQL expressions
+Create a new PrometheusAutoscaler referencing it
 
-Tune thresholds and behavior
+Write PromQL expressions for metrics
 
-Inspect controller decisions:
+Tune thresholds, aggregation, and behavior
+
+Observe controller behavior:
 
 kubectl describe prometheusautoscaler <name>
 
@@ -364,10 +346,10 @@ Next Steps
 
 Additional aggregation strategies
 
-Per-metric gating and safety conditions
+Metric gating logic (e.g., block scale-up when MySQL is saturated)
 
-Potential integration with KEDA
+Optional KEDA integration
 
-Expanded test coverage
+More test coverage
 
-Examples for non-Laravel workloads
+Demo stacks for Node.js, Go, etc.
